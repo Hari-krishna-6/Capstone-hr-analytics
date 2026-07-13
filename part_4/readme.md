@@ -1,45 +1,236 @@
-# LLM-Powered Feature: Model Prediction Explanation Pipeline (Part 4)
+# Part 4 – LLM Powered Feature (Track C: Model Prediction Explanation Pipeline)
 
-This section details the implementation of **Track C: Model Prediction Explanation Pipeline**. This feature integrates the serialized machine learning pipeline asset generated in Part 3 with a generative Large Language Model layer to provide structured, validated, and secure natural language explanations of algorithmic flight risk scores.
+## Objective
 
----
+For this part of the project, I selected **Track C – Model Prediction Explanation Pipeline**. The objective is to combine the machine learning model developed in Part 3 with a Large Language Model (LLM) to generate structured explanations for model predictions.
 
-## 🎯 Track Selection & Design Decisions
-
-* **Selected Track:** Track C — Model Prediction Explanation Pipeline
-* **Temperature Configuration:** `temperature=0.0`
-* **Rationale for Temperature Choice:** Setting the temperature to `0.0` forces the LLM to use deterministic decoding. Instead of sampling from a broader distribution of tokens, the model always selects the token with the highest mathematical probability. This eliminates creative variance and ensures that the output strictly adheres to the requested JSON syntax, offering reproducible explanations across automated system runs.
+The pipeline loads the trained model, predicts employee attrition for selected records, obtains prediction probabilities, and sends this information to an LLM. The LLM returns a structured JSON explanation, which is validated before being accepted.
 
 ---
 
-## 📝 Verbatim Prompt Specifications
+# Track Selected
 
-### 1. System Prompt
+**Track C – Model Prediction Explanation Pipeline**
+
+The complete workflow is:
+
+1. Load the trained model (`best_model.pkl`).
+2. Load and preprocess the cleaned dataset.
+3. Select three employee records.
+4. Predict the class using `.predict()`.
+5. Predict the probability using `.predict_proba()`.
+6. Send the feature values, predicted class and probability to the LLM.
+7. Validate the returned JSON using a predefined schema.
+8. Display the explanation.
+
+---
+
+# API Configuration
+
+The API key is securely stored as an environment variable.
+
+```python
+API_KEY = os.environ.get("LLM_API_KEY")
+```
+
+The notebook does not contain any hardcoded API keys.
+
+A reusable function named **call_llm()** was created using the Python **requests** library. This function:
+
+* creates the JSON request body,
+* sends an HTTP POST request,
+* checks the response status,
+* returns the generated response.
+
+To verify the connection, the following test prompt was executed.
+
+**Prompt**
+
 ```text
-You are a workforce analytics explanation system. Given specific employee feature values, their predicted attrition classification status (0=Stay, 1=Leave), and the algorithmic probability of flight risk, output a valid JSON object explaining the model's prediction. 
+Reply with only the word: hello
+```
 
-Your output must strictly follow this JSON schema structure without markdown wrappers or code blocks:
-{
-  "prediction_label": "Clear textual translation of prediction class",
-  "confidence_level": "low or medium or high based on closeness to classification margins",
-  "top_reason": "Primary driving feature rationale linked to operational attrition context",
-  "second_reason": "Secondary supporting feature rationale from input data",
-  "next_step": "Strategic, actionable retention management recommendation"
-}
-Ensure all keys are populated using scalar string text values.
-ecurity Guardrail: PII Detection Results
-Before any payload is assembled or dispatched to the external LLM API endpoint, the raw user text is processed through a regular expression scanner to identify and block Personally Identifiable Information (PII).
+**Response**
 
-PII Guardrail Regular Expression Patterns:
+```text
+hello
+```
 
-Email Scanner: r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+This confirmed that the API connection was working correctly.
 
-Phone Sequence Scanner: r'\b\d{10}\b|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b'
-Temperature Variability Analysis (A/B Testing)
-Each handcrafted feature-vector record was run through the explanation pipeline at both temperature=0.0 and temperature=0.7 to evaluate structural consistency.
+---
 
-Determinism Rationale
-At temperature=0.0, the model acts as a deterministic greedy search engine, picking the single highest-probability next token, making it perfect for schema-bound parsing. Increasing the temperature to 0.7 flattens the probability distribution, allowing less likely tokens to be sampled. This introduces stylistic vocabulary shifts that risk adding conversational text or markdown code blocks, which can cause downstream json.loads() functions to fail.
+# Prompt Design
 
-End-to-End Pipeline Demonstration & Schema Validation
-The production pipeline loaded best_model.pkl using joblib, evaluated three hand-crafted feature vectors via .predict() and .predict_proba(), passed the metadata securely through the PII filter, and validated the JSON responses against the structural schema constraints using jsonschema.validate().
+## System Prompt
+
+The system prompt defines the model as an HR Analytics prediction explanation assistant.
+
+The LLM receives:
+
+* Employee feature values
+* Predicted class
+* Prediction probability
+
+The model is instructed to return **only valid JSON** containing the following fields:
+
+* prediction_label
+* confidence_level
+* top_reason
+* second_reason
+* next_step
+
+No markdown or additional text is allowed.
+
+---
+
+## User Prompt Template
+
+```text
+Employee Features
+
+{features}
+
+Predicted Class
+
+{prediction}
+
+Prediction Probability
+
+{probability}
+
+Generate only valid JSON.
+```
+
+---
+
+# Why Temperature = 0?
+
+Temperature controls the randomness of the generated response.
+
+For this task, structured JSON output is required. Therefore, **temperature = 0** was chosen because it produces deterministic and consistent responses.
+
+A second experiment was performed using **temperature = 0.7** to observe how the explanations changed.
+
+---
+
+# Temperature Comparison
+
+| Record   | Temperature = 0                                                                  | Temperature = 0.7                                                                            | Key Difference                                             |
+| -------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Record 1 | Medium confidence explanation focused on overtime and relationship satisfaction. | Medium confidence explanation focused on overtime, work-life balance and previous companies. | Prediction unchanged, wording became more detailed.        |
+| Record 2 | Employee predicted to stay with emphasis on salary hike and company tenure.      | Employee predicted to stay with similar reasoning but different wording.                     | Prediction unchanged, explanation wording varied.          |
+| Record 3 | Low confidence explanation based on monthly income and environment satisfaction. | Low confidence explanation including job level, overtime and tenure.                         | Prediction unchanged, explanation became more descriptive. |
+
+Temperature **0** produced consistent structured responses, while **0.7** generated more varied explanations for the same prediction.
+
+---
+
+# JSON Schema Validation
+
+A JSON schema was created containing the following required fields:
+
+* prediction_label
+* confidence_level
+* top_reason
+* second_reason
+* next_step
+
+After every API call:
+
+1. The response was cleaned using `strip()`.
+2. The response was parsed using `json.loads()`.
+3. The parsed object was validated using `jsonschema.validate()`.
+
+If validation failed, a fallback dictionary containing null values was returned.
+
+---
+
+# PII Guardrail
+
+Before every API request, the input was checked for Personally Identifiable Information (PII).
+
+The guardrail detects:
+
+* Email addresses
+* Phone numbers
+
+### Guardrail Test
+
+| Input                                           | Result  |
+| ----------------------------------------------- | ------- |
+| [employee@gmail.com](mailto:employee@gmail.com) | Blocked |
+| Age is 30 and MonthlyIncome is 5000             | Allowed |
+
+The guardrail successfully prevented sensitive information from being sent to the LLM.
+
+---
+
+# End-to-End Demonstration
+
+Three employee records from the processed dataset were passed through the complete pipeline.
+
+For each record:
+
+* the trained Random Forest model generated a prediction,
+* the prediction probability was calculated,
+* the feature values, prediction and probability were sent to the LLM,
+* the returned JSON was validated successfully.
+
+### Record 1
+
+| Item                   | Value |
+| ---------------------- | ----- |
+| Predicted Class        | 1     |
+| Prediction Probability | 0.630 |
+| Validation             | PASS  |
+
+The LLM identified overtime and poor relationship satisfaction as the major reasons for employee attrition and recommended reducing overtime and improving employee engagement.
+
+---
+
+### Record 2
+
+| Item                   | Value |
+| ---------------------- | ----- |
+| Predicted Class        | 0     |
+| Prediction Probability | 0.035 |
+| Validation             | PASS  |
+
+The explanation highlighted the employee's long company tenure and high salary hike as indicators of low attrition risk and recommended continued employee engagement.
+
+---
+
+### Record 3
+
+| Item                   | Value |
+| ---------------------- | ----- |
+| Predicted Class        | 0     |
+| Prediction Probability | 0.475 |
+| Validation             | PASS  |
+
+The explanation suggested that although the employee had relatively low monthly income, high environment satisfaction reduced the likelihood of attrition. The recommendation was to monitor employee engagement and career growth.
+
+---
+
+# Validation Summary
+
+| Record | Predicted Class | Probability | Validation |
+| ------ | --------------: | ----------: | ---------- |
+| 1      |               1 |       0.630 | PASS       |
+| 2      |               0 |       0.035 | PASS       |
+| 3      |               0 |       0.475 | PASS       |
+
+All three responses were successfully parsed and validated against the predefined JSON schema.
+
+---
+
+# Conclusion
+
+In this part of the project, a complete LLM-powered prediction explanation pipeline was successfully implemented.
+
+The trained machine learning model generated employee attrition predictions using `.predict()` and `.predict_proba()`. These predictions, together with the employee feature values, were passed to the LLM to generate structured explanations.
+
+The API key was securely managed through environment variables, the responses were validated using a JSON schema, and a PII guardrail prevented sensitive information from being transmitted.
+
+Finally, three employee records were successfully processed at two different temperature settings. All responses passed schema validation, demonstrating that the pipeline produces reliable, structured and explainable outputs suitable for HR Analytics applications.

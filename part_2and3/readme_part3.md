@@ -1,90 +1,312 @@
-# Employee Attrition Advanced Modeling — Ensembles, Tuning, and Full ML Pipeline (Part 3 Documentation)
+# Part 3 – Advanced Modeling: Ensembles, Hyperparameter Tuning and Machine Learning Pipeline
 
-This section of the repository provides the comprehensive technical documentation and evaluation results for **Part 3** of the assignment. It details the behavior of unconstrained vs. controlled decision trees, ensemble mechanics, feature ablation studies, hyperparameter optimization via pipelines, manual learning curves, and final deployment specifications.
+## Objective
 
----
-
-## 🛠️ Tasks 1, 2, & 3: Decision Tree Architectures & Mathematical Foundations
-
-### 1. Unconstrained vs. Controlled Decision Trees
-* **Unconstrained Tree (`max_depth=None`):** Exhibits high overfitting tendencies. It scores near-perfect or perfect accuracy on the training set but experiences a significant drop on the test set. 
-* **Why Decision Trees are High-Variance:** Decision trees are non-parametric models that split nodes greedily at each step using the feature that maximizes immediate information gain. Because they do not look ahead or revisit prior splitting decisions, they easily carve out tiny, hyper-localized pockets of noise in the training data rather than discovering smooth, generalizable decision boundaries.
-* **Controlled Tree Optimization (`max_depth=5`, `min_samples_split=20`):**
-  * `max_depth=5`: Imposes a hard structural limit on tree growth. This introduces intentional bias by preventing the tree from modeling hyper-specific data nuances, which significantly reduces model variance.
-  * `min_samples_split=20`: Disallows any node from splitting unless it contains at least 20 samples. This prevents the model from generating leaf nodes based on tiny, unrepresentative subsets of data that respond to noise.
-  * **Generalization Profile:** The controlled tree drastically shrinks the generalization gap (the distance between training and test metrics), outperforming the unconstrained tree on unseen test sets.
-
-### 2. Splitting Criteria Formulations
-When partitioning nodes, decision trees measure structural impurity using mathematical criteria:
-
-* **Gini Impurity Formula:**
-  $$Gini = 1 - \sum_{i=1}^{C} p_i^2$$
-* **Entropy Formula:**
-  $$Entropy = -\sum_{i=1}^{C} p_i \log_2(p_i)$$
-
-*(Where $C$ represents the total number of target classes, and $p_i$ is the probability/proportion of samples belonging to class $i$ inside that node).*
-
-* **Mathematical Zero State (Gini = 0):** A node achieves a Gini impurity of exactly `0` when it becomes perfectly homogeneous. This means $p_i = 1$ for one class and $0$ for all others, indicating that every single sample inside that node belongs to a single class, resulting in a pure terminal leaf node.
+The objective of this part is to compare multiple machine learning models, evaluate their performance using cross-validation, perform hyperparameter tuning, analyse feature importance, and build a reusable machine learning pipeline. The best-performing model is then saved for future predictions.
 
 ---
 
-## 📊 Task 4: Random Forest Ensemble Mechanics & Feature Importances
+# 1. Decision Tree (Baseline Model)
 
-### 1. The Bagging Concept & Variance Reduction
-Random Forest leverages **Bagging (Bootstrap Aggregating)** to build an ensemble of diverse trees. For each individual tree, a bootstrap sample (sampling with replacement) is generated from the original training data. Furthermore, at each individual node split within a tree, the algorithm selects a random subset of features—typically configured as $\sqrt{\text{total features}}$—to choose from. 
+The first model trained was a Decision Tree Classifier using the default parameters.
 
-By forcing trees to train on distinct data subsets and limiting their feature access at each split, the individual trees become deeply decorrelated. When the ensemble averages the individual high-variance tree predictions together, the random errors cancel each other out. This drastically reduces overall model variance without inflating structural bias.
+### Results
 
-### 2. Feature Importance Computation vs. Linear Coefficients
-* **MDI Computation:** Random Forest calculates feature importance using **Mean Decrease in Impurity (MDI)**. This is the average reduction in Gini impurity or Entropy achieved by all splits on a given feature, weighted by the number of samples reaching those nodes, averaged across all $N$ trees in the forest.
-* **Contrast with Linear Regression:** A linear regression coefficient indicates the directional change (positive or negative) in the target variable for a one-unit change in a feature, assuming all other variables remain perfectly static. Random Forest feature importance is non-directional, non-linear, and captures complex feature interactions across multi-stage splits without assuming a linear relationship.
+| Metric            |      Value |
+| ----------------- | ---------: |
+| Training Accuracy | **1.0000** |
+| Testing Accuracy  | **0.7347** |
 
-### 3. Top 5 Discovered Operational Features
-Below are the top 5 features driving the Random Forest classification predictions:
+### Interpretation
 
-| Feature Rank | Feature Name | MDI Importance Score |
-| :--- | :--- | :--- |
-| **1** | TotalWorkingYears | 0.1432 |
-| **2** | MonthlyIncome | 0.1298 |
-| **3** | Age | 0.1085 |
-| **4** | YearsAtCompany | 0.0894 |
-| **5** | DailyRate | 0.0761 |
+The model achieved perfect accuracy on the training dataset but considerably lower accuracy on the testing dataset. This indicates that the tree has memorized the training data instead of learning general patterns.
+
+Therefore, the default Decision Tree clearly shows **overfitting**.
+
+Decision Trees are considered **high variance models** because they greedily split the dataset at every node and do not reconsider earlier decisions. As a result, even small changes in the training data can produce a very different tree.
 
 ---
 
-## 📉 Task 4b: Feature Ablation Study & Production Trade-offs
+# 2. Controlled Decision Tree
 
-Using the bottom 5 least informative features identified via the master Random Forest MDI weights, a secondary model was trained under identical hyperparameters to evaluate a reduced dimensional footprint:
+To reduce overfitting, a second Decision Tree was trained using:
 
-* **Full Model Test ROC-AUC (All Features):** `0.8046`
-* **Reduced Model Test ROC-AUC (5 Bottom Features Removed):** `0.8052`
+```python
+max_depth = 5
+min_samples_split = 20
+```
 
-### Interpretations & Production Implications
-The test-set ROC-AUC remained highly stable (and marginally improved), proving that the removed features were genuinely uninformative and acting as structural noise within the ensemble tree splits. 
+### Results
 
-In enterprise production environments, deploying a simpler, lower-dimensional model reduces computational inference latency, minimizes data pipeline storage footprints, and lowers long-term maintenance/monitoring burdens. This trade-off is highly acceptable because the metric degradation is well within tolerable thresholds, matching or exceeding the baseline capability while streamlining data engineering requirements.
+| Metric            |      Value |
+| ----------------- | ---------: |
+| Training Accuracy | **0.8472** |
+| Testing Accuracy  | **0.8061** |
+
+### Interpretation
+
+Restricting the tree depth reduced the gap between training and testing accuracy.
+
+The parameter **max_depth** limits the maximum number of levels in the tree. A smaller depth prevents the tree from learning unnecessary details present only in the training data.
+
+The parameter **min_samples_split** prevents further splitting when a node contains only a small number of samples. This reduces the effect of noisy observations and improves the model's ability to generalize.
+
+Compared with the unconstrained tree, the controlled tree provides better testing performance while significantly reducing overfitting.
 
 ---
 
-## 🛠️ Task 5 & 6: Production Pipeline Cross-Validation & Grid Search
+# 3. Gini vs Entropy
 
-### 1. Cross-Validation vs. Single Split Reliability
-Cross-validation yields a much more stable and realistic estimate of real-world generalization performance because it evaluates the model across 5 distinct, isolated validation subsets. A single train-test split is highly susceptible to data partitioning luck, where an unrepresentative distribution in the test split can cause heavily skewed, over-optimistic or pessimistic evaluation scores.
+Two Decision Tree models were trained using different splitting criteria.
 
-### 2. 5-Fold Stratified Cross-Validation Benchmark (Task 5 Output)
-Evaluated strictly on the raw, unresampled corporate data footprint to maintain a completely leak-proof baseline:
-* **Logistic Regression:** Mean AUC: `0.8401` | Std Dev: `0.0257`
-* **Controlled Decision Tree:** Mean AUC: `0.6840` | Std Dev: `0.0481`
-* **Random Forest (Baseline):** Mean AUC: `0.8006` | Std Dev: `0.0369`
-* **Gradient Boosting:** Mean AUC: `0.8084` | Std Dev: `0.0190`
+### Results
 
-### 3. Hyperparameter Grid Optimization Framework (Task 6)
-An automated pipeline grid search was integrated over an atomic `sklearn.pipeline.Pipeline` containing a `SimpleImputer(strategy='median')`, `StandardScaler()`, and a `RandomForestClassifier`.
+| Criterion | Test Accuracy |
+| --------- | ------------: |
+| Gini      |    **0.8061** |
+| Entropy   |    **0.8095** |
 
-* **Evaluated Hyperparameter Space Grid:**
-  ```python
-  param_grid = {
-      'randomforestclassifier__n_estimators': [50, 100, 200],
-      'randomforestclassifier__max_depth': [5, 10, None],
-      'randomforestclassifier__min_samples_leaf': [1, 5]
-  }
+### Formula for Gini Impurity
+
+[
+Gini = 1-\sum p_i^2
+]
+
+### Formula for Entropy
+
+[
+Entropy=-\sum p_i\log_2(p_i)
+]
+
+A node with **Gini = 0** means that every sample in that node belongs to the same class, making it a perfectly pure node.
+
+### Interpretation
+
+Both criteria produced similar performance. However, Entropy achieved slightly higher testing accuracy on this dataset.
+
+---
+
+# 4. Random Forest
+
+A Random Forest classifier was trained using the following parameters:
+
+* n_estimators = 100
+* max_depth = 10
+* random_state = 42
+
+### Results
+
+| Metric            |      Value |
+| ----------------- | ---------: |
+| Training Accuracy | **0.9926** |
+| Testing Accuracy  | **0.8299** |
+| ROC-AUC           | **0.8046** |
+
+The Random Forest significantly improved the testing performance compared to both Decision Tree models.
+
+### Feature Importance
+
+The Random Forest calculates feature importance by measuring the average reduction in Gini Impurity produced by each feature across all trees in the forest.
+
+Unlike Linear Regression coefficients, feature importance values do not indicate whether the relationship is positive or negative. Instead, they measure how useful each feature is when making decisions inside the ensemble.
+
+The five most important features identified by the model were printed in the notebook and used later for the feature ablation study.
+
+---
+
+## Bagging in Random Forest
+
+Random Forest is an ensemble learning algorithm that combines many Decision Trees.
+
+Each tree is trained using **Bootstrap Sampling**, where the training samples are selected randomly with replacement.
+
+During every split, only a random subset of available features is considered.
+
+Because each tree sees a different subset of both samples and features, the individual trees become less correlated. Their predictions are then averaged, reducing variance and improving generalization compared to a single Decision Tree.
+
+---
+
+# 5. Gradient Boosting
+
+Gradient Boosting was trained using:
+
+* n_estimators = 100
+* learning_rate = 0.1
+* max_depth = 3
+
+### Results
+
+| Metric            |      Value |
+| ----------------- | ---------: |
+| Training Accuracy | **0.9581** |
+| Testing Accuracy  | **0.8605** |
+| ROC-AUC           | **0.7569** |
+
+### Interpretation
+
+Gradient Boosting achieved the highest testing accuracy among the individual tree-based models.
+
+Unlike Random Forest, which builds trees independently, Gradient Boosting trains trees sequentially. Each new tree attempts to correct the mistakes made by the previous trees, allowing the ensemble to learn increasingly accurate decision boundaries.
+
+The Gradient Boosting model is included in the cross-validation comparison performed later in this project.
+
+# 6. Feature Ablation Study
+
+To analyse the contribution of less important features, the five features with the lowest importance scores from the Random Forest model were removed. A second Random Forest model was then trained using the remaining features.
+
+### Results
+
+| Model                 |    ROC-AUC |
+| --------------------- | ---------: |
+| Full Random Forest    | **0.8046** |
+| Reduced Random Forest | **0.7963** |
+
+### Interpretation
+
+Removing the five least important features resulted in only a small decrease in ROC-AUC.
+
+This indicates that these features contributed relatively little to the model's predictive performance. Therefore, removing them simplifies the model with only a minor reduction in accuracy.
+
+A simpler model reduces computational cost, memory usage and maintenance effort during deployment. However, feature removal should only be considered when the reduction in performance is within an acceptable limit.
+
+---
+
+# 7. Cross Validation
+
+To obtain a more reliable estimate of model performance, five-fold Stratified Cross Validation was performed using ROC-AUC as the evaluation metric.
+
+### Results
+
+| Model                    | Mean ROC-AUC | Standard Deviation |
+| ------------------------ | -----------: | -----------------: |
+| Logistic Regression      |   **0.8401** |         **0.0257** |
+| Controlled Decision Tree |   **0.6840** |         **0.0481** |
+| Random Forest            |   **0.8006** |         **0.0369** |
+| Gradient Boosting        |   **0.8084** |         **0.0190** |
+
+### Interpretation
+
+Cross-validation evaluates the model on multiple train-test splits instead of relying on a single split. This provides a more reliable estimate of how the model is expected to perform on unseen data.
+
+Among all models, **Logistic Regression** achieved the highest average ROC-AUC, while **Gradient Boosting** showed the lowest variation across folds, indicating more consistent performance.
+
+---
+
+# 8. Hyperparameter Tuning using GridSearchCV
+
+A machine learning pipeline was created consisting of:
+
+* SimpleImputer (Median)
+* StandardScaler
+* RandomForestClassifier
+
+GridSearchCV was used to search for the best combination of hyperparameters.
+
+### Parameter Grid
+
+* n_estimators = 50, 100, 200
+* max_depth = 5, 10, None
+* min_samples_leaf = 1, 5
+
+A total of:
+
+**3 × 3 × 2 = 18**
+
+parameter combinations were evaluated.
+
+Using five-fold cross validation,
+
+**18 × 5 = 90**
+
+models were trained.
+
+### Best Parameters
+
+| Parameter        | Value    |
+| ---------------- | -------- |
+| n_estimators     | **200**  |
+| max_depth        | **None** |
+| min_samples_leaf | **1**    |
+
+Best Cross-Validated ROC-AUC:
+
+**0.8136**
+
+### Interpretation
+
+Grid Search evaluates every possible parameter combination and therefore provides the best-performing configuration from the specified search space.
+
+Although Grid Search is computationally expensive, it guarantees that every candidate model is evaluated.
+
+Randomized Search is generally faster because it evaluates only a random subset of parameter combinations, making it more suitable for larger search spaces.
+
+---
+
+# 9. Manual Learning Curve
+
+The best pipeline obtained from GridSearchCV was trained using progressively larger portions of the training data.
+
+### Results
+
+| Training Fraction | Training ROC-AUC | Testing ROC-AUC |
+| ----------------: | ---------------: | --------------: |
+|               20% |           1.0000 |          0.7038 |
+|               40% |           1.0000 |          0.7238 |
+|               60% |           1.0000 |          0.7790 |
+|               80% |           1.0000 |          0.7792 |
+|              100% |           1.0000 |          0.7857 |
+
+### Interpretation
+
+The training ROC-AUC remained very high throughout the experiment, indicating that the model is able to fit the training data extremely well.
+
+The testing ROC-AUC gradually increased as more training data became available.
+
+This suggests that collecting additional training data is likely to improve model performance further. The model therefore appears to be **data-limited** rather than limited by model capacity.
+
+---
+
+# 10. Model Serialization
+
+The best-performing machine learning pipeline was saved using:
+
+```python
+joblib.dump(best_pipeline, "best_model.pkl")
+```
+
+The saved model was then reloaded using:
+
+```python
+model = joblib.load("best_model.pkl")
+```
+
+Predictions were successfully generated for hand-crafted test samples, confirming that the serialized model can be reused without retraining.
+
+---
+
+# 11. Final Model Comparison
+
+| Model                    | Test ROC-AUC / CV ROC-AUC |
+| ------------------------ | ------------------------: |
+| Logistic Regression      |      **0.8401 (CV Mean)** |
+| Controlled Decision Tree |      **0.6840 (CV Mean)** |
+| Random Forest            |      **0.8006 (CV Mean)** |
+| Gradient Boosting        |      **0.8084 (CV Mean)** |
+
+### Recommended Model
+
+Although Gradient Boosting achieved the highest testing accuracy, **Logistic Regression** achieved the highest average ROC-AUC during cross-validation (**0.8401**) and demonstrated more reliable generalization across multiple folds.
+
+Considering predictive performance, simplicity and computational efficiency, Logistic Regression is recommended as the final model for this HR Analytics dataset.
+
+---
+
+# Conclusion
+
+In this part of the project, multiple ensemble learning techniques and model optimization methods were explored. A baseline Decision Tree initially showed severe overfitting, which was reduced by limiting the tree depth and minimum samples required for splitting.
+
+Random Forest and Gradient Boosting further improved predictive performance through ensemble learning. Feature importance analysis and feature ablation showed that several low-importance features could be removed with only a small reduction in performance.
+
+GridSearchCV was used to identify the best Random Forest hyperparameters, while the learning curve demonstrated that increasing the amount of training data could further improve model performance. Finally, the best pipeline was serialized as **best_model.pkl**, allowing the trained model to be reused without repeating the training process.
+
+Overall, this part demonstrates a complete machine learning workflow, including ensemble methods, hyperparameter tuning, cross-validation, feature analysis and model deployment.
