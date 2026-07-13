@@ -1,0 +1,16 @@
+# Local Environment Key Isolation (CRITICAL)
+.env
+.env.local
+
+# Python standard cache folders
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Operating system system files
+.DS_Store
+Thumbs.db
